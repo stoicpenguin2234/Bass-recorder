@@ -307,7 +307,7 @@ $('btnStart').onclick = () => {
   const tracks = [...mixDest.stream.getAudioTracks()];
   if (vidStream) tracks.push(...vidStream.getVideoTracks());
   const comb = new MediaStream(tracks);
-  const mime = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm';
   recObj = new MediaRecorder(comb, { mimeType: mime, audioBitsPerSecond: 256000 });
   recObj.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
   recObj.onstop = () => {
