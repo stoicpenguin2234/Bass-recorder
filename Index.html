@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bass Studio Recorder</title>
+<style>
+  * { box-sizing: border-box; font-family: sans-serif; }
+  body { background: #121214; color: #f4f4f6; margin: 0; padding: 12px; }
+  .box { max-width: 800px; margin: auto; background: #1e1e24; border-radius: 12px; padding: 16px; }
+  h1 { margin: 0 0 14px; font-size: 1.3rem; }
+  h2 { margin: 16px 0 8px; font-size: 1rem; color: #3498db; border-top: 1px solid #333; padding-top: 12px; }
+  label { display: block; font-size: 0.85rem; color: #9e9ea7; margin: 10px 0 4px; }
+  select, button, input[type="file"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #2a2a32; color: #fff; font-size: 0.95rem; }
+  input[type="range"] { width: 100%; accent-color: #3498db; margin: 6px 0; }
+  .vid-wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; overflow: hidden; margin: 14px 0; }
+  video#preview { width: 100%; height: 100%; object-fit: cover; }
+  .rec { position: absolute; top: 10px; left: 10px; background: #ff4d4d; padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; display: none; }
+  .meter-bg { width: 100%; height: 14px; background: #111; border-radius: 7px; overflow: hidden; margin-bottom: 14px; }
+  .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #2ecc71, #f1c40f 75%, #e74c3c 95%); }
+  .chk { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 0.9rem; color: #f4f4f6; }
+  .chk input { width: 18px; height: 18px; }
+  .row { display: flex; gap: 10px; margin-top: 12px; }
+  button { font-weight: bold; border: none; cursor: pointer; }
+  #btnStart { background: #ff4d4d; }
+  #btnStop { background: #444; }
+  #btnPerm { background: #3498db; margin-bottom: 10px; }
+  #btnSysAudio { background: #9b59b6; margin-top: 6px; }
+  #btnTrackPlay { background: #2ecc71; color: #111; }
+  button:disabled { opacity: 0.4; }
+  #msg { font-size: 0.85rem; color: #2ecc71; margin-top: 10px; line-height: 1.4; }
+  .slider-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #ccc; margin-top: 8px; }
+  .take { background: #25252d; padding: 12px; border-radius: 8px; margin-top: 12px; }
+  .take video { width: 100%; border-radius: 6px; margin: 8px 0; max-height: 220px; background: #000; }
+  .dl { display: inline-block; width: 100%; text-align: center; background: #2ecc71; color: #111; padding: 10px; border-radius: 6px; text-decoration: none; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>🎸 Bass Studio Recorder</h1>
+  <button id="btnPerm">🔄 Connect Camera & Focusrite Scarlett</button>
+
+  <label for="cam">Camera Input</label>
+  <select id="cam"></select>
+
+  <label for="mic">USB Audio Interface / Input</label>
+  <select id="mic"></select>
+
+  <label for="spk">Speaker / Headphone Output</label>
+  <select id="spk"><option value="">Default System / Scarlett Output</option></select>
+
+  <label class="chk"><input type="checkbox" id="raw" checked> Raw Instrument Mode (Clean Bass Tone)</label>
+  <label class="chk"><input type="checkbox" id="mon"> Software Monitor (Use Scarlett Direct Monitor knob for zero latency)</label>
+
+  <div class="slider-row"><span>Bass Input Gain</span><span id="bassVolTxt">100%</span></div>
+  <input type="range" id="bassVol" min="0" max="200" value="100">
+
+  <h2>📡 Live App Audio Capture (YouTube Music / Tidal)</h2>
+  <button id="btnSysAudio">🎙️ Capture Device / App Audio</button>
+  <div class="slider-row"><span>Captured App Audio Volume</span><span id="sysVolTxt">80%</span></div>
+  <input type="range" id="sysVol" min="0" max="150" value="80">
+
+  <h2>🎵 Local Backing Track File</h2>
+  <input type="file" id="trackFile" accept="audio/*">
+  <audio id="bgAudio" loop crossorigin="anonymous"></audio>
+
+  <div class="slider-row"><span>Local File Volume</span><span id="trackVolTxt">80%</span></div>
+  <input type="range" id="trackVol" min="0" max="150" value="80">
+
+  <div class="row">
+    <button id="btnTrackPlay" disabled>▶ Play File</button>
+    <button id="btnTrackStop" disabled>■ Stop File</button>
+  </div>
+
+  <div class="vid-wrap">
+    <video id="preview" autoplay muted playsinline></video>
+    <div class="rec" id="rec">● REC <span id="timer">00:00</span></div>
+  </div>
+
+  <label>Master Mix Input Level</label>
+  <div class="meter-bg"><div class="meter-fill" id="meter"></div></div>
+
+  <div class="row">
+    <button id="btnStart">● Record Video + Mix</button>
+    <button id="btnStop" disabled>■ Stop</button>
+  </div>
+
+  <div id="msg"></div>
+  <div id="takes"></div>
+</div>
+
+<script>
+const cam = document.getElementById('cam'), mic = document.getElementById('mic'), spk = document.getElementById('spk'),
+      raw = document.getElementById('raw'), mon = document.getElementById('mon'),
+      bassVol = document.getElementById('bassVol'), bassVolTxt = document.getElementById('bassVolTxt'),
+      btnSysAudio = document.getElementById('btnSysAudio'), sysVol = document.getElementById('sysVol'), sysVolTxt = document.getElementById('sysVolTxt'),
+      trackFile = document.getElementById('trackFile'), bgAudio = document.getElementById('bgAudio'),
+      trackVol = document.getElementById('trackVol'), trackVolTxt = document.getElementById('trackVolTxt'),
+      btnTrackPlay = document.getElementById('btnTrackPlay'), btnTrackStop = document.getElementById('btnTrackStop'),
+      preview = document.getElementById('preview'), meter = document.getElementById('meter'),
+      btnStart = document.getElementById('btnStart'), btnStop = document.getElementById('btnStop'),
+      btnPerm = document.getElementById('btnPerm'), rec = document.getElementById('rec'),
+      timer = document.getElementById('timer'), msg = document.getElementById('msg'),
+      takes = document.getElementById('takes');
+
+let camMicStream, sysStream, ctx, analyser, bassGain, monGain, sysGain, trackGain, trackSourceNode, mixDest,
+    recorder, chunks = [], tInt, sec = 0, count = 0;
+
+function ensureAudioContext() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    mixDest = ctx.createMediaStreamDestination();
+
+    bassGain = ctx.createGain();
+    bassGain.gain.value = bassVol.value / 100;
+
+    monGain = ctx.createGain();
+    monGain.gain.value = mon.checked ? 1 : 0;
+
+    sysGain = ctx.createGain();
+    sysGain.gain.value = sysVol.value / 100;
+
+    trackGain = ctx.createGain();
+    trackGain.gain.value = trackVol.value / 100;
+
+    trackSourceNode = ctx.createMediaElementSource(bgAudio);
+    trackSourceNode.connect(trackGain);
+    trackGain.connect(mixDest);
+    trackGain.connect(analyser);
+    trackGain.connect(ctx.destination);
+
+    sysGain.connect(mixDest);
+    sysGain.connect(analyser);
+
+    bassGain.connect(mixDest);
+    bassGain.connect(analyser);
+    bassGain.connect(monGain);
+    monGain.connect(ctx.destination);
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    (function draw() {
+      analyser.getByteTimeDomainData(data);
+      let peak = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = Math.abs(data[i] - 128) / 128;
+        if (v > peak) peak = v;
+      }
+      meter.style.width = Math.min(100, Math.round(peak * 140)) + '%';
+      requestAnimationFrame(draw);
+    })();
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+}
+
+btnSysAudio.onclick = async () => {
+  ensureAudioContext();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+    msg.style.color = '#ff4d4d';
+    msg.textContent = 'System audio capture is not supported in this browser view. Open in Chrome or use a Local Backing Track file.';
+    return;
+  }
+  try {
+    if (sysStream) sysStream.getTracks().forEach(t => t.stop());
+    sysStream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      }
+    });
+    const audioTracks = sysStream.getAudioTracks();
+    // Stop the screen video track immediately so we only keep system audio + your camera
+    sysStream.getVideoTracks().forEach(t => t.stop());
+
+    if (audioTracks.length === 0) {
+      msg.style.color = '#ff4d4d';
+      msg.textContent = 'No system audio shared. Make sure "Share audio" is toggled ON in the Android prompt (note: DRM apps like Tidal may block capture).';
+      return;
+    }
+
+    const audioOnlyStream = new MediaStream(audioTracks);
+    const sysNode = ctx.createMediaStreamSource(audioOnlyStream);
+    sysNode.connect(sysGain);
+
+    btnSysAudio.textContent = '✅ App Audio Connected';
+    btnSysAudio.style.background = '#2ecc71';
+    btnSysAudio.style.color = '#111';
+    msg.style.color = '#2ecc71';
+    msg.textContent = 'System/App audio linked! Start playing YouTube Music or Tidal and check the meter.';
+  } catch (e) {
+    msg.style.color = '#ff4d4d';
+    msg.textContent = 'App audio capture canceled or blocked: ' + e.message;
+  }
+};
+
+async function init() {
+  msg.style.color = '#2ecc71';
+  msg.textContent = 'Requesting camera & USB audio access...';
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    s.getTracks().forEach(t => t.stop());
+    await loadDevices();
+    await startStream();
+    msg.textContent = 'Devices connected!';
+  } catch (e) {
+    msg.style.color = '#ff4d4d';
+    msg.textContent = 'Permission blocked: ' + e.message;
+  }
+}
+
+async function loadDevices() {
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  const vVal = cam.value, aVal = mic.value, sVal = spk.value;
+  cam.innerHTML = ''; mic.innerHTML = ''; spk.innerHTML = '<option value="">Default System / Scarlett Output</option>';
+
+  devs.forEach(d => {
+    const o = document.createElement('option');
