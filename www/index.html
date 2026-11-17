@@ -307,13 +307,15 @@ $('btnStart').onclick = () => {
   const tracks = [...mixDest.stream.getAudioTracks()];
   if (vidStream) tracks.push(...vidStream.getVideoTracks());
   const comb = new MediaStream(tracks);
-  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm';
+  const mp4Type = 'video/mp4;codecs=avc1,mp4a.40.2';
+  const mime = MediaRecorder.isTypeSupported(mp4Type) ? mp4Type : 'video/webm';
+  const cleanMime = mime.includes('mp4') ? 'video/mp4' : 'video/webm';
   recObj = new MediaRecorder(comb, { mimeType: mime, audioBitsPerSecond: 256000 });
   recObj.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
   recObj.onstop = () => {
     cnt++;
-    const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-    const blob = new Blob(chunks, { type: mime });
+    const ext = cleanMime.includes('mp4') ? 'mp4' : 'webm';
+    const blob = new Blob(chunks, { type: cleanMime });
     const url = URL.createObjectURL(blob);
     const fname = 'Bass_Mix_' + cnt + '.' + ext;
     const d = document.createElement('div'); d.className = 'take';
@@ -328,7 +330,7 @@ $('btnStart').onclick = () => {
         const Saver = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SaveVideo;
         if (Saver) {
           try {
-            await Saver.saveToDownloads({ data: b64, filename: fname, mime: 'video/webm' });
+            await Saver.saveToDownloads({ data: b64, filename: fname, mime: cleanMime });
             btnSave.textContent = '✅ Saved to Downloads!';
             say('Saved ' + fname + ' to Downloads folder!', false);
           } catch (err) { btnSave.textContent = '❌ Save Failed'; say('Save error: ' + err.message, true); }
