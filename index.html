@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Bass Studio Recorder</title>
- <link rel="manifest" href="manifest.json">
+<link rel="manifest" href="manifest.json">
 <style>
   * { box-sizing: border-box; font-family: sans-serif; }
   body { background: #121214; color: #f4f4f6; margin: 0; padding: 12px; }
@@ -29,7 +29,7 @@
   #btnSysAudio { background: #9b59b6; margin-top: 6px; }
   #btnTrackPlay { background: #2ecc71; color: #111; }
   button:disabled { opacity: 0.4; }
-  #msg { font-size: 0.9rem; color: #2ecc71; margin-top: 12px; font-weight: bold; line-height: 1.4; }
+  #msg { font-size: 0.9rem; color: #2ecc71; margin: 10px 0; font-weight: bold; }
   .slider-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #ccc; margin-top: 8px; }
   .take { background: #25252d; padding: 12px; border-radius: 8px; margin-top: 12px; }
   .take video { width: 100%; border-radius: 6px; margin: 8px 0; max-height: 220px; background: #000; }
@@ -39,8 +39,8 @@
 <body>
 <div class="box">
   <h1>🎸 Bass Studio Recorder</h1>
-  <button id="btnPerm">🔄 Connect Camera & Focusrite Scarlett</button>
-  <div id="msg"></div>
+  <button id="btnPerm" type="button">🔄 Connect Camera &amp; Focusrite Scarlett</button>
+  <div id="msg">Ready — tap Connect above to start.</div>
 
   <label for="cam">Camera Input</label>
   <select id="cam"></select>
@@ -49,7 +49,7 @@
   <select id="mic"></select>
 
   <label class="chk"><input type="checkbox" id="raw" checked> Raw Instrument Mode (Clean Bass Tone)</label>
-  <label class="chk"><input type="checkbox" id="mon"> Software Monitor (Use Scarlett Direct Monitor knob for zero latency)</label>
+  <label class="chk"><input type="checkbox" id="mon"> Software Monitor (Headphones Only)</label>
 
   <div class="slider-row"><span>Bass Input Gain</span><span id="bassVolTxt">100%</span></div>
   <input type="range" id="bassVol" min="0" max="200" value="100">
@@ -63,12 +63,12 @@
   <div class="meter-bg"><div class="meter-fill" id="meter"></div></div>
 
   <div class="row">
-    <button id="btnStart">● Record Video + Mix</button>
-    <button id="btnStop" disabled>■ Stop</button>
+    <button id="btnStart" type="button">● Record Video + Mix</button>
+    <button id="btnStop" type="button" disabled>■ Stop</button>
   </div>
 
-  <h2>📡 Live App Audio Capture (YouTube Music / Tidal)</h2>
-  <button id="btnSysAudio">🎙️ Capture Device / App Audio</button>
+  <h2>📡 Live App Audio Capture (YouTube / Tidal)</h2>
+  <button id="btnSysAudio" type="button">🎙️ Capture Device / App Audio</button>
   <div class="slider-row"><span>Captured App Audio Volume</span><span id="sysVolTxt">80%</span></div>
   <input type="range" id="sysVol" min="0" max="150" value="80">
 
@@ -80,52 +80,69 @@
   <input type="range" id="trackVol" min="0" max="150" value="80">
 
   <div class="row">
-    <button id="btnTrackPlay" disabled>▶ Play File</button>
-    <button id="btnTrackStop" disabled>■ Stop File</button>
+    <button id="btnTrackPlay" type="button" disabled>▶ Play File</button>
+    <button id="btnTrackStop" type="button" disabled>■ Stop File</button>
   </div>
 
   <div id="takes"></div>
 </div>
 
 <script>
-const cam = document.getElementById('cam'), mic = document.getElementById('mic'),
-      raw = document.getElementById('raw'), mon = document.getElementById('mon'),
-      bassVol = document.getElementById('bassVol'), bassVolTxt = document.getElementById('bassVolTxt'),
-      btnSysAudio = document.getElementById('btnSysAudio'), sysVol = document.getElementById('sysVol'), sysVolTxt = document.getElementById('sysVolTxt'),
-      trackFile = document.getElementById('trackFile'), bgAudio = document.getElementById('bgAudio'),
-      trackVol = document.getElementById('trackVol'), trackVolTxt = document.getElementById('trackVolTxt'),
-      btnTrackPlay = document.getElementById('btnTrackPlay'), btnTrackStop = document.getElementById('btnTrackStop'),
-      preview = document.getElementById('preview'), meter = document.getElementById('meter'),
-      btnStart = document.getElementById('btnStart'), btnStop = document.getElementById('btnStop'),
-      btnPerm = document.getElementById('btnPerm'), rec = document.getElementById('rec'),
-      timer = document.getElementById('timer'), msg = document.getElementById('msg'),
-      takes = document.getElementById('takes');
+const cam = document.getElementById('cam');
+const mic = document.getElementById('mic');
+const raw = document.getElementById('raw');
+const mon = document.getElementById('mon');
+const bassVol = document.getElementById('bassVol');
+const bassVolTxt = document.getElementById('bassVolTxt');
+const btnSysAudio = document.getElementById('btnSysAudio');
+const sysVol = document.getElementById('sysVol');
+const sysVolTxt = document.getElementById('sysVolTxt');
+const trackFile = document.getElementById('trackFile');
+const bgAudio = document.getElementById('bgAudio');
+const trackVol = document.getElementById('trackVol');
+const trackVolTxt = document.getElementById('trackVolTxt');
+const btnTrackPlay = document.getElementById('btnTrackPlay');
+const btnTrackStop = document.getElementById('btnTrackStop');
+const preview = document.getElementById('preview');
+const meter = document.getElementById('meter');
+const btnStart = document.getElementById('btnStart');
+const btnStop = document.getElementById('btnStop');
+const btnPerm = document.getElementById('btnPerm');
+const rec = document.getElementById('rec');
+const timer = document.getElementById('timer');
+const msg = document.getElementById('msg');
+const takes = document.getElementById('takes');
 
-let stream, sysStream, ctx, analyser, bassGain, monGain, sysGain, trackGain, trackNode, mixDest,
-    recorder, chunks = [], tInt, sec = 0, count = 0;
+let stream, sysStream, ctx, analyser, bassGain, monGain, sysGain, trackGain, trackNode, mixDest;
+let recorder, chunks = [], tInt, sec = 0, count = 0;
 
-function showMsg(text, isErr = false) {
+function showMsg(text, isErr) {
   msg.style.color = isErr ? '#ff4d4d' : '#2ecc71';
   msg.textContent = text;
 }
 
 async function init() {
-  showMsg('Requesting camera & USB audio access...');
+  showMsg('Requesting camera & USB audio access...', false);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showMsg('Camera/Mic API unavailable in this browser.', true);
+    return;
+  }
   try {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     s.getTracks().forEach(t => t.stop());
     await loadDevices();
     await startStream();
-    showMsg('Devices connected!');
+    showMsg('Devices connected!', false);
   } catch (e) {
-    showMsg('Permission blocked: ' + e.message, true);
+    showMsg('Error (' + e.name + '): ' + e.message, true);
   }
 }
 
 async function loadDevices() {
   const devs = await navigator.mediaDevices.enumerateDevices();
   const vVal = cam.value, aVal = mic.value;
-  cam.innerHTML = ''; mic.innerHTML = '';
+  cam.innerHTML = '';
+  mic.innerHTML = '';
   devs.forEach(d => {
     const o = document.createElement('option');
     o.value = d.deviceId;
@@ -139,8 +156,8 @@ async function loadDevices() {
       if (d.label && d.label.toLowerCase().includes('scarlett')) mic.value = d.deviceId;
     }
   });
-  if (vVal && [...cam.options].some(o => o.value === vVal)) cam.value = vVal;
-  if (aVal && [...mic.options].some(o => o.value === aVal)) mic.value = aVal;
+  if (vVal) cam.value = vVal;
+  if (aVal) mic.value = aVal;
 }
 
 async function startStream() {
@@ -160,9 +177,9 @@ async function startStream() {
 
     if (!ctx) {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
-      analyser = ctx.createAnalyser(); analyser.fftSize = 256;
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
       mixDest = ctx.createMediaStreamDestination();
-
       bassGain = ctx.createGain();
       monGain = ctx.createGain();
       sysGain = ctx.createGain();
@@ -172,10 +189,8 @@ async function startStream() {
       bassGain.connect(analyser);
       bassGain.connect(monGain);
       monGain.connect(ctx.destination);
-
       sysGain.connect(mixDest);
       sysGain.connect(analyser);
-
       trackGain.connect(mixDest);
       trackGain.connect(analyser);
       trackGain.connect(ctx.destination);
@@ -202,25 +217,19 @@ async function startStream() {
     const src = ctx.createMediaStreamSource(stream);
     src.connect(bassGain);
   } catch (e) {
-    showMsg('Stream error: ' + e.message, true);
+    showMsg('Stream error (' + e.name + '): ' + e.message, true);
   }
 }
 
 btnSysAudio.onclick = async () => {
   if (!ctx) await init();
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    showMsg('App audio capture is not supported in this browser view.', true);
-    return;
-  }
   try {
     if (sysStream) sysStream.getTracks().forEach(t => t.stop());
     sysStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     const audioTracks = sysStream.getAudioTracks();
     sysStream.getVideoTracks().forEach(t => t.stop());
     if (audioTracks.length === 0) {
-      showMsg('No audio shared. Turn ON "Share audio" in the Android pop-up.', true);
+      showMsg('No audio shared. Turn ON Share audio in Android prompt.', true);
       return;
     }
     const sysNode = ctx.createMediaStreamSource(new MediaStream(audioTracks));
-    sysNode.connect(sysGain);
-    btnSysAudio.textContent = '✅ App Audio Connected';
