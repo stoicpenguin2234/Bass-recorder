@@ -85,8 +85,8 @@
   <div class="srow"><span>Local File Volume</span><span id="tTxt">80%</span></div>
   <input type="range" id="tVol" min="0" max="150" value="80">
   <div class="row">
-    <button id="btnPlay" type="button" disabled>▶ Play File</button>
-    <button id="btnPause" type="button" disabled>■ Stop File</button>
+    <button id="btnPlay" type="button" disabled>▶ Play</button>
+    <button id="btnPause" type="button" disabled>⏮ Restart</button>
   </div>
 
   <div id="takes"></div>
@@ -99,6 +99,11 @@ let tInt, sec = 0, cnt = 0, metInt = null, beat = 0;
 function say(txt, err) {
   $('msg').style.color = err ? '#ff4d4d' : '#2ecc71';
   $('msg').textContent = txt;
+}
+
+function setPlayBtn(isPlaying) {
+  $('btnPlay').textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+  $('btnPlay').style.background = isPlaying ? '#f1c40f' : '#2ecc71';
 }
 
 function setupAudio() {
@@ -225,15 +230,23 @@ $('tFile').onchange = () => {
   if (!f) return;
   $('bgAudio').src = URL.createObjectURL(f);
   $('btnPlay').disabled = false; $('btnPause').disabled = false;
+  setPlayBtn(false);
   say('Loaded track: ' + f.name, false);
 };
 
 $('btnPlay').onclick = () => {
   setupAudio();
   if (!tNode) { tNode = ctx.createMediaElementSource($('bgAudio')); tNode.connect(tGain); }
-  $('bgAudio').play();
+  const a = $('bgAudio');
+  if (a.paused) { a.play(); setPlayBtn(true); }
+  else { a.pause(); setPlayBtn(false); }
 };
-$('btnPause').onclick = () => { $('bgAudio').pause(); $('bgAudio').currentTime = 0; };
+
+$('btnPause').onclick = () => {
+  const a = $('bgAudio');
+  a.pause(); a.currentTime = 0;
+  setPlayBtn(false);
+};
 
 $('btnStart').onclick = () => {
   if (!stream || !mixDest) return;
@@ -254,7 +267,12 @@ $('btnStart').onclick = () => {
     $('takes').prepend(d);
   };
   recObj.start(250);
-  if ($('bgAudio').src && $('bgAudio').paused) $('bgAudio').play();
+  if ($('bgAudio').src && $('bgAudio').paused) {
+    setupAudio();
+    if (!tNode) { tNode = ctx.createMediaElementSource($('bgAudio')); tNode.connect(tGain); }
+    $('bgAudio').play();
+    setPlayBtn(true);
+  }
   $('btnStart').disabled = true; $('btnStop').disabled = false; $('cam').disabled = true; $('mic').disabled = true;
   $('rec').style.display = 'block'; sec = 0; $('timer').textContent = '00:00';
   tInt = setInterval(() => { sec++; $('timer').textContent = String(Math.floor(sec/60)).padStart(2,'0') + ':' + String(sec%60).padStart(2,'0'); }, 1000);
@@ -262,7 +280,7 @@ $('btnStart').onclick = () => {
 
 $('btnStop').onclick = () => {
   if (recObj && recObj.state !== 'inactive') recObj.stop();
-  $('bgAudio').pause(); clearInterval(tInt);
+  $('bgAudio').pause(); setPlayBtn(false); clearInterval(tInt);
   $('btnStart').disabled = false; $('btnStop').disabled = true; $('cam').disabled = false; $('mic').disabled = false;
   $('rec').style.display = 'none';
 };
