@@ -35,7 +35,7 @@
   .led.accent { background: #ff4d4d; box-shadow: 0 0 12px #ff4d4d; }
   .take { background: #25252d; padding: 12px; border-radius: 8px; margin-top: 12px; }
   .take video { width: 100%; border-radius: 6px; margin: 8px 0; max-height: 220px; background: #000; }
-  .dl { display: inline-block; width: 100%; text-align: center; background: #2ecc71; color: #111; padding: 10px; border-radius: 6px; text-decoration: none; font-weight: bold; }
+  .dl { display: inline-block; width: 100%; text-align: center; background: #2ecc71; color: #111; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 0.95rem; }
 </style>
 </head>
 <body>
@@ -53,7 +53,7 @@
   <label for="mic">USB Audio Interface / Input</label>
   <select id="mic"></select>
 
-  <label class="chk"><input type="checkbox" id="raw" checked> Raw Instrument Mode (Clean Bass Tone)</label>
+  <label class="chk"><input type="checkbox" id="raw" checked> Raw Instrument Mode (Auto-enabled on USB Scarlett)</label>
   <label class="chk"><input type="checkbox" id="mon"> Software Monitor (Headphones Only)</label>
 
   <div class="srow"><span>Bass Input Gain</span><span id="bTxt">100%</span></div>
@@ -168,22 +168,25 @@ async function loadMics() {
 
 async function startAudio() {
   if (audStream) audStream.getTracks().forEach(t => t.stop());
-  const r = $('raw').checked;
+  const selectedOpt = $('mic').options.item($('mic').selectedIndex);
+  const selectedLabel = selectedOpt ? selectedOpt.text.toLowerCase() : '';
+  const isUsb = selectedLabel.includes('scarlett') || selectedLabel.includes('usb');
+  const useRaw = $('raw').checked && isUsb;
   try {
     audStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: $('mic').value ? { ideal: $('mic').value } : undefined,
-        echoCancellation: !r,
-        noiseSuppression: !r,
-        autoGainControl: !r
+        echoCancellation: !useRaw,
+        noiseSuppression: !useRaw,
+        autoGainControl: !useRaw
       }
     });
     await loadMics();
     setupAudio();
-    if (micSrcNode) micSrcNode.disconnect();
+    if (micSrcNode) { try { micSrcNode.disconnect(); } catch (e) {} }
     micSrcNode = ctx.createMediaStreamSource(audStream);
     micSrcNode.connect(bGain);
-    say('Audio connected!', false);
+    say(isUsb ? 'USB Interface connected (Raw Bass Mode)!' : 'Phone Mic connected (Echo Cancellation ON)!', false);
   } catch (e) {
     say('Audio error (' + e.name + '): ' + e.message, true);
   }
@@ -202,7 +205,6 @@ async function startVideo() {
     say('Camera warning (' + e.name + '): Audio still works! Try switching Front/Rear camera.', true);
   }
 }
-
 window.onAndroidAudioChunk = function(b64) {
   if (!sysActive || !ctx) return;
   const bin = atob(b64);
@@ -226,21 +228,15 @@ window.onAndroidAudioChunk = function(b64) {
 $('btnSys').onclick = async () => {
   setupAudio();
   const Plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SystemAudio;
-  if (!Plugin) {
-    say('Native Android APK required for internal audio capture.', true);
-    return;
-  }
+  if (!Plugin) return say('Native Android APK required for internal audio capture.', true);
   if (!sysActive) {
     try {
       await Plugin.startCapture();
-      sysActive = true;
-      nextPlayTime = ctx.currentTime;
+      sysActive = true; nextPlayTime = ctx.currentTime;
       $('btnSys').textContent = '⏹ Stop Android Internal Audio';
       $('btnSys').style.background = '#e74c3c';
       say('Capturing Android internal audio!', false);
-    } catch (e) {
-      say('Internal audio error: ' + e.message, true);
-    }
+    } catch (e) { say('Internal audio error: ' + e.message, true); }
   } else {
     await Plugin.stopCapture();
     sysActive = false;
@@ -252,8 +248,7 @@ $('btnSys').onclick = async () => {
 
 function playClick() {
   setupAudio();
-  const osc = ctx.createOscillator();
-  const env = ctx.createGain();
+  const osc = ctx.createOscillator(), env = ctx.createGain();
   const isAccent = (beat % 4 === 0);
   osc.frequency.value = isAccent ? 1000 : 750;
   env.gain.setValueAtTime(0.6, ctx.currentTime);
@@ -293,8 +288,7 @@ $('tFile').onchange = () => {
   const f = $('tFile').files.item(0);
   if (!f) return;
   $('bgAudio').src = URL.createObjectURL(f);
-  $('btnPlay').disabled = false; $('btnPause').disabled = false;
-  setPlayBtn(false);
+  $('btnPlay').disabled = false; $('btnPause').disabled = false; setPlayBtn(false);
   say('Loaded track: ' + f.name, false);
 };
 
@@ -302,14 +296,10 @@ $('btnPlay').onclick = () => {
   setupAudio();
   if (!tNode) { tNode = ctx.createMediaElementSource($('bgAudio')); tNode.connect(tGain); }
   const a = $('bgAudio');
-  if (a.paused) { a.play(); setPlayBtn(true); }
-  else { a.pause(); setPlayBtn(false); }
+  if (a.paused) { a.play(); setPlayBtn(true); } else { a.pause(); setPlayBtn(false); }
 };
 
-$('btnPause').onclick = () => {
-  const a = $('bgAudio');
-  a.pause(); a.currentTime = 0; setPlayBtn(false);
-};
+$('btnPause').onclick = () => { const a = $('bgAudio'); a.pause(); a.currentTime = 0; setPlayBtn(false); };
 
 $('btnStart').onclick = () => {
   if (!mixDest) return;
@@ -323,12 +313,30 @@ $('btnStart').onclick = () => {
   recObj.onstop = () => {
     cnt++;
     const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-    const url = URL.createObjectURL(new Blob(chunks, { type: mime }));
+    const blob = new Blob(chunks, { type: mime });
+    const url = URL.createObjectURL(blob);
+    const fname = 'Bass_Mix_' + cnt + '.' + ext;
     const d = document.createElement('div'); d.className = 'take';
     const title = document.createElement('strong'); title.textContent = 'Take #' + cnt + ' (' + $('timer').textContent + ')';
     const vid = document.createElement('video'); vid.controls = true; vid.playsInline = true; vid.src = url;
-    const link = document.createElement('a'); link.className = 'dl'; link.href = url; link.download = 'Bass_Mix_' + cnt + '.' + ext; link.textContent = '⬇ Download Video';
-    d.append(title, vid, link);
+    const btnSave = document.createElement('button'); btnSave.className = 'dl'; btnSave.type = 'button'; btnSave.textContent = '💾 Save Video to Phone';
+    btnSave.onclick = () => {
+      btnSave.textContent = '⏳ Saving...';
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const b64 = reader.result.split(',').slice(1).join(',');
+        const Saver = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SaveVideo;
+        if (Saver) {
+          try {
+            await Saver.saveToDownloads({ data: b64, filename: fname, mime: mime });
+            btnSave.textContent = '✅ Saved to Downloads!';
+            say('Saved ' + fname + ' to Downloads folder!', false);
+          } catch (err) { btnSave.textContent = '❌ Save Failed'; say('Save error: ' + err.message, true); }
+        } else { const a = document.createElement('a'); a.href = url; a.download = fname; a.click(); }
+      };
+      reader.readAsDataURL(blob);
+    };
+    d.append(title, vid, btnSave);
     $('takes').prepend(d);
   };
   recObj.start(250);
