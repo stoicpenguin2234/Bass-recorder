@@ -24,9 +24,9 @@ jobs:
           npx cap init "Bass Studio" "com.bassstudio.recorder" --web-dir www
           npx cap add android
 
-      - name: Inject Native Permissions & Audio Capture Plugin
+      - name: Inject Native Permissions & Plugins
         run: |
-          sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />\n    <uses-feature android:name="android.hardware.usb.host" />\n    <application|' android/app/src/main/AndroidManifest.xml
+          sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />\n    <uses-feature android:name="android.hardware.usb.host" />\n    <application|' android/app/src/main/AndroidManifest.xml
 
           sed -i 's|</application>|    <service android:name=".AudioCaptureService" android:foregroundServiceType="mediaProjection" android:exported="false" />\n    </application>|' android/app/src/main/AndroidManifest.xml
 
@@ -117,7 +117,7 @@ jobs:
                   audioRecord.startRecording();
                   isCapturing = true;
                   new Thread(() -> {
-                      byte[] buf = new byte[4096];
+                      byte[] buf = new byte;
                       while (isCapturing && audioRecord != null) {
                           int read = audioRecord.read(buf, 0, buf.length);
                           if (read > 0) {
@@ -139,23 +139,82 @@ jobs:
               }
           }
           EOF
+          cat << 'EOF' > android/app/src/main/java/com/bassstudio/recorder/SaveVideoPlugin.java
+          package com.bassstudio.recorder;
+          import android.content.ContentValues;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Environment;
+          import android.provider.MediaStore;
+          import android.util.Base64;
+          import com.getcapacitor.*;
+          import com.getcapacitor.annotation.*;
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.OutputStream;
+
+          @CapacitorPlugin(name = "SaveVideo")
+          public class SaveVideoPlugin extends Plugin {
+              @PluginMethod
+              public void saveToDownloads(PluginCall call) {
+                  String b64 = call.getString("data");
+                  String filename = call.getString("filename", "Bass_Mix.mp4");
+                  String mime = call.getString("mime", "video/mp4");
+                  if (b64 == null) { call.reject("No data"); return; }
+                  try {
+                      byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                          ContentValues cv = new ContentValues();
+                          cv.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+                          cv.put(MediaStore.Downloads.MIME_TYPE, mime);
+                          cv.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                          Uri uri = getContext().getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+                          try (OutputStream os = getContext().getContentResolver().openOutputStream(uri)) {
+                              os.write(bytes);
+                          }
+                      } else {
+                          File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                          File out = new File(dir, filename);
+                          try (FileOutputStream fos = new FileOutputStream(out)) {
+                              fos.write(bytes);
+                          }
+                      }
+                      call.resolve();
+                  } catch (Exception e) {
+                      call.reject("Save failed: " + e.getMessage());
+                  }
+              }
+          }
+          EOF
 
           cat << 'EOF' > android/app/src/main/java/com/bassstudio/recorder/MainActivity.java
           package com.bassstudio.recorder;
+          import android.Manifest;
+          import android.content.pm.PackageManager;
           import android.os.Bundle;
           import android.webkit.PermissionRequest;
           import android.webkit.WebChromeClient;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   registerPlugin(SystemAudioPlugin.class);
+                  registerPlugin(SaveVideoPlugin.class);
                   super.onCreate(savedInstanceState);
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this, new String[]{
+                          Manifest.permission.CAMERA,
+                          Manifest.permission.RECORD_AUDIO
+                      }, 101);
+                  }
                   this.bridge.getWebView().setWebChromeClient(new WebChromeClient() {
                       @Override
                       public void onPermissionRequest(final PermissionRequest request) {
-                          request.grant(request.getResources());
+                          runOnUiThread(() -> request.grant(request.getResources()));
                       }
                   });
               }
