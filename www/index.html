@@ -328,7 +328,7 @@ $('btnStart').onclick = () => {
         const Saver = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SaveVideo;
         if (Saver) {
           try {
-            await Saver.saveToDownloads({ data: b64, filename: fname, mime: mime });
+            await Saver.saveToDownloads({ data: b64, filename: fname, mime: 'video/webm' });
             btnSave.textContent = '✅ Saved to Downloads!';
             say('Saved ' + fname + ' to Downloads folder!', false);
           } catch (err) { btnSave.textContent = '❌ Save Failed'; say('Save error: ' + err.message, true); }
