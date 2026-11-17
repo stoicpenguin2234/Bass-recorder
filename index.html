@@ -12,7 +12,7 @@
   h1 { margin: 0 0 12px; font-size: 1.3rem; }
   h2 { margin: 16px 0 8px; font-size: 1rem; color: #3498db; border-top: 1px solid #333; padding-top: 12px; }
   label { display: block; font-size: 0.85rem; color: #9e9ea7; margin: 10px 0 4px; }
-  select, button, input[type="file"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #2a2a32; color: #fff; font-size: 0.95rem; }
+  select, button, input[type="file"], input[type="number"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #2a2a32; color: #fff; font-size: 0.95rem; }
   input[type="range"] { width: 100%; accent-color: #3498db; margin: 6px 0; }
   .vid-wrap { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 8px; overflow: hidden; margin: 14px 0; }
   video#preview { width: 100%; height: 100%; object-fit: cover; }
@@ -21,16 +21,18 @@
   .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #2ecc71, #f1c40f 75%, #e74c3c 95%); }
   .chk { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 0.9rem; color: #f4f4f6; }
   .chk input { width: 18px; height: 18px; }
-  .row { display: flex; gap: 10px; margin-top: 12px; }
+  .row { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
   button { font-weight: bold; border: none; cursor: pointer; }
   #btnStart { background: #ff4d4d; }
   #btnStop { background: #444; }
   #btnPerm { background: #3498db; margin-bottom: 8px; }
-  #btnSys { background: #9b59b6; margin-top: 6px; }
-  #btnPlay { background: #2ecc71; color: #111; }
+  #btnPlay, #btnMet { background: #2ecc71; color: #111; }
   button:disabled { opacity: 0.4; }
   #msg { font-size: 0.9rem; color: #2ecc71; margin: 8px 0; font-weight: bold; }
   .srow { display: flex; justify-content: space-between; font-size: 0.85rem; color: #ccc; margin-top: 8px; }
+  .led { width: 22px; height: 22px; border-radius: 50%; background: #333; flex-shrink: 0; border: 2px solid #555; }
+  .led.on { background: #2ecc71; box-shadow: 0 0 10px #2ecc71; }
+  .led.accent { background: #ff4d4d; box-shadow: 0 0 12px #ff4d4d; }
   .take { background: #25252d; padding: 12px; border-radius: 8px; margin-top: 12px; }
   .take video { width: 100%; border-radius: 6px; margin: 8px 0; max-height: 220px; background: #000; }
   .dl { display: inline-block; width: 100%; text-align: center; background: #2ecc71; color: #111; padding: 10px; border-radius: 6px; text-decoration: none; font-weight: bold; }
@@ -41,28 +43,42 @@
   <h1>🎸 Bass Studio Recorder</h1>
   <button id="btnPerm" type="button" onclick="connectAll()">🔄 Connect Camera &amp; Focusrite Scarlett</button>
   <div id="msg">Ready — tap Connect above to start.</div>
+
   <label for="cam">Camera Input</label>
   <select id="cam"></select>
+
   <label for="mic">USB Audio Interface / Input</label>
   <select id="mic"></select>
+
   <label class="chk"><input type="checkbox" id="raw" checked> Raw Instrument Mode (Clean Bass Tone)</label>
   <label class="chk"><input type="checkbox" id="mon"> Software Monitor (Headphones Only)</label>
+
   <div class="srow"><span>Bass Input Gain</span><span id="bTxt">100%</span></div>
   <input type="range" id="bVol" min="0" max="200" value="100">
+
   <div class="vid-wrap">
     <video id="preview" autoplay muted playsinline></video>
     <div class="rec" id="rec">● REC <span id="timer">00:00</span></div>
   </div>
+
   <label>Master Mix Input Level</label>
   <div class="meter-bg"><div class="meter-fill" id="meter"></div></div>
+
   <div class="row">
     <button id="btnStart" type="button">● Record Video + Mix</button>
     <button id="btnStop" type="button" disabled>■ Stop</button>
   </div>
-  <h2>📡 Live App Audio Capture (YouTube / Tidal)</h2>
-  <button id="btnSys" type="button">🎙️ Capture Device / App Audio</button>
-  <div class="srow"><span>Captured App Audio Volume</span><span id="sTxt">80%</span></div>
-  <input type="range" id="sVol" min="0" max="150" value="80">
+
+  <h2>⏱️ Studio Metronome</h2>
+  <div class="row">
+    <div class="led" id="led"></div>
+    <input type="number" id="bpm" min="40" max="240" value="100" style="width: 100px;">
+    <button id="btnMet" type="button">▶ Start Click</button>
+  </div>
+  <div class="srow"><span>Metronome Volume</span><span id="mTxt">70%</span></div>
+  <input type="range" id="mVol" min="0" max="150" value="70">
+  <label class="chk"><input type="checkbox" id="recMet"> Record Metronome Click into Video</label>
+
   <h2>🎵 Local Backing Track File</h2>
   <input type="file" id="tFile" accept="audio/*">
   <audio id="bgAudio" loop></audio>
@@ -72,15 +88,45 @@
     <button id="btnPlay" type="button" disabled>▶ Play File</button>
     <button id="btnPause" type="button" disabled>■ Stop File</button>
   </div>
+
   <div id="takes"></div>
 </div>
 <script>
 const $ = id => document.getElementById(id);
-let stream, sysStream, ctx, analyser, bGain, mGain, sGain, tGain, tNode, mixDest, recObj, chunks = [], tInt, sec = 0, cnt = 0;
+let stream, ctx, analyser, bGain, mGain, tGain, metGain, tNode, mixDest, recObj, chunks = [];
+let tInt, sec = 0, cnt = 0, metInt = null, beat = 0;
 
 function say(txt, err) {
   $('msg').style.color = err ? '#ff4d4d' : '#2ecc71';
   $('msg').textContent = txt;
+}
+
+function setupAudio() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = ctx.createAnalyser(); analyser.fftSize = 256;
+    mixDest = ctx.createMediaStreamDestination();
+    bGain = ctx.createGain(); mGain = ctx.createGain(); tGain = ctx.createGain(); metGain = ctx.createGain();
+
+    bGain.connect(mixDest); bGain.connect(analyser); bGain.connect(mGain); mGain.connect(ctx.destination);
+    tGain.connect(mixDest); tGain.connect(analyser); tGain.connect(ctx.destination);
+    metGain.connect(ctx.destination);
+    if ($('recMet').checked) metGain.connect(mixDest);
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    (function draw() {
+      analyser.getByteTimeDomainData(data);
+      let p = 0;
+      for (let i = 0; i < data.length; i++) { const v = Math.abs(data[i] - 128) / 128; if (v > p) p = v; }
+      $('meter').style.width = Math.min(100, Math.round(p * 140)) + '%';
+      requestAnimationFrame(draw);
+    })();
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+  bGain.gain.value = $('bVol').value / 100;
+  mGain.gain.value = $('mon').checked ? 1 : 0;
+  tGain.gain.value = $('tVol').value / 100;
+  metGain.gain.value = $('mVol').value / 100;
 }
 
 async function connectAll() {
@@ -126,50 +172,52 @@ async function startStream() {
       audio: { deviceId: $('mic').value ? { ideal: $('mic').value } : undefined, echoCancellation: !r, noiseSuppression: !r, autoGainControl: !r }
     });
     $('preview').srcObject = stream;
-    if (!ctx) {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      analyser = ctx.createAnalyser(); analyser.fftSize = 256;
-      mixDest = ctx.createMediaStreamDestination();
-      bGain = ctx.createGain(); mGain = ctx.createGain(); sGain = ctx.createGain(); tGain = ctx.createGain();
-      bGain.connect(mixDest); bGain.connect(analyser); bGain.connect(mGain); mGain.connect(ctx.destination);
-      sGain.connect(mixDest); sGain.connect(analyser);
-      tGain.connect(mixDest); tGain.connect(analyser); tGain.connect(ctx.destination);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      (function draw() {
-        analyser.getByteTimeDomainData(data);
-        let p = 0;
-        for (let i = 0; i < data.length; i++) { const v = Math.abs(data[i] - 128) / 128; if (v > p) p = v; }
-        $('meter').style.width = Math.min(100, Math.round(p * 140)) + '%';
-        requestAnimationFrame(draw);
-      })();
-    }
-    if (ctx.state === 'suspended') await ctx.resume();
-    bGain.gain.value = $('bVol').value / 100;
-    mGain.gain.value = $('mon').checked ? 1 : 0;
-    sGain.gain.value = $('sVol').value / 100;
-    tGain.gain.value = $('tVol').value / 100;
+    setupAudio();
     ctx.createMediaStreamSource(stream).connect(bGain);
   } catch (e) {
     say('Stream error (' + e.name + '): ' + e.message, true);
   }
 }
 
-$('btnSys').onclick = async () => {
-  if (!ctx) await connectAll();
-  try {
-    if (sysStream) sysStream.getTracks().forEach(t => t.stop());
-    sysStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    const aTracks = sysStream.getAudioTracks();
-    sysStream.getVideoTracks().forEach(t => t.stop());
-    if (!aTracks.length) return say('No audio shared. Turn ON Share audio in prompt.', true);
-    ctx.createMediaStreamSource(new MediaStream(aTracks)).connect(sGain);
-    $('btnSys').textContent = '✅ App Audio Connected';
-    say('App audio linked!', false);
-  } catch (e) { say('App audio error: ' + e.message, true); }
+function playClick() {
+  setupAudio();
+  const osc = ctx.createOscillator();
+  const env = ctx.createGain();
+  const isAccent = (beat % 4 === 0);
+  osc.frequency.value = isAccent ? 1000 : 750;
+  env.gain.setValueAtTime(0.6, ctx.currentTime);
+  env.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+  osc.connect(env); env.connect(metGain);
+  osc.start(); osc.stop(ctx.currentTime + 0.05);
+
+  $('led').className = isAccent ? 'led accent' : 'led on';
+  setTimeout(() => { $('led').className = 'led'; }, 100);
+  beat++;
+}
+
+$('btnMet').onclick = () => {
+  if (metInt) {
+    clearInterval(metInt); metInt = null;
+    $('btnMet').textContent = '▶ Start Click';
+    $('btnMet').style.background = '#2ecc71';
+  } else {
+    const val = Math.min(240, Math.max(40, parseInt($('bpm').value) || 100));
+    $('bpm').value = val; beat = 0; playClick();
+    metInt = setInterval(playClick, 60000 / val);
+    $('btnMet').textContent = '■ Stop Click';
+    $('btnMet').style.background = '#ff4d4d';
+  }
+};
+
+$('bpm').onchange = () => { if (metInt) { $('btnMet').click(); $('btnMet').click(); } };
+$('recMet').onchange = () => {
+  if (!metGain || !mixDest) return;
+  try { metGain.disconnect(mixDest); } catch (e) {}
+  if ($('recMet').checked) metGain.connect(mixDest);
 };
 
 $('bVol').oninput = () => { $('bTxt').textContent = $('bVol').value + '%'; if (bGain) bGain.gain.value = $('bVol').value / 100; };
-$('sVol').oninput = () => { $('sTxt').textContent = $('sVol').value + '%'; if (sGain) sGain.gain.value = $('sVol').value / 100; };
+$('mVol').oninput = () => { $('mTxt').textContent = $('mVol').value + '%'; if (metGain) metGain.gain.value = $('mVol').value / 100; };
 $('tVol').oninput = () => { $('tTxt').textContent = $('tVol').value + '%'; if (tGain) tGain.gain.value = $('tVol').value / 100; };
 
 $('tFile').onchange = () => {
@@ -180,9 +228,9 @@ $('tFile').onchange = () => {
   say('Loaded track: ' + f.name, false);
 };
 
-$('btnPlay').onclick = async () => {
-  if (!ctx) await connectAll();
-  if (ctx && !tNode) { tNode = ctx.createMediaElementSource($('bgAudio')); tNode.connect(tGain); }
+$('btnPlay').onclick = () => {
+  setupAudio();
+  if (!tNode) { tNode = ctx.createMediaElementSource($('bgAudio')); tNode.connect(tGain); }
   $('bgAudio').play();
 };
 $('btnPause').onclick = () => { $('bgAudio').pause(); $('bgAudio').currentTime = 0; };
