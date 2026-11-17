@@ -45,7 +45,10 @@
   <div id="msg">Ready — tap Connect above to start.</div>
 
   <label for="cam">Camera Input</label>
-  <select id="cam"></select>
+  <select id="cam">
+    <option value="user">Front Camera (Selfie)</option>
+    <option value="environment">Rear Main Camera</option>
+  </select>
 
   <label for="mic">USB Audio Interface / Input</label>
   <select id="mic"></select>
@@ -98,8 +101,8 @@
 </div>
 <script>
 const $ = id => document.getElementById(id);
-let stream, ctx, analyser, bGain, mGain, sGain, tGain, metGain, tNode, mixDest, recObj, chunks = [];
-let tInt, sec = 0, cnt = 0, metInt = null, beat = 0, sysActive = false, nextPlayTime = 0;
+let audStream, vidStream, ctx, analyser, bGain, mGain, sGain, tGain, metGain, tNode, mixDest, recObj, chunks = [];
+let tInt, sec = 0, cnt = 0, metInt = null, beat = 0, sysActive = false, nextPlayTime = 0, micSrcNode = null;
 
 function say(txt, err) {
   $('msg').style.color = err ? '#ff4d4d' : '#2ecc71';
@@ -142,49 +145,61 @@ function setupAudio() {
 }
 
 async function connectAll() {
-  say('Requesting camera & USB audio access...', false);
-  try {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    s.getTracks().forEach(t => t.stop());
-    await loadDevs();
-    await startStream();
-    say('Devices connected!', false);
-  } catch (e) {
-    say('Error (' + e.name + '): ' + e.message, true);
-  }
+  say('Connecting Focusrite Scarlett & Camera...', false);
+  await startAudio();
+  await startVideo();
 }
 
-async function loadDevs() {
+async function loadMics() {
   const devs = await navigator.mediaDevices.enumerateDevices();
-  const cv = $('cam').value, mv = $('mic').value;
-  $('cam').innerHTML = ''; $('mic').innerHTML = '';
+  const mv = $('mic').value;
+  $('mic').innerHTML = '';
   devs.forEach(d => {
-    const o = document.createElement('option');
-    o.value = d.deviceId;
-    if (d.kind === 'videoinput') { o.text = d.label || 'Camera ' + ($('cam').length + 1); $('cam').appendChild(o); }
     if (d.kind === 'audioinput') {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
       o.text = d.label || 'USB / Mic ' + ($('mic').length + 1);
       $('mic').appendChild(o);
       if (d.label && d.label.toLowerCase().includes('scarlett')) $('mic').value = d.deviceId;
     }
   });
-  if (cv) $('cam').value = cv;
-  if (mv) $('mic').value = mv;
+  if (mv && [...$('mic').options].some(o => o.value === mv)) $('mic').value = mv;
 }
 
-async function startStream() {
-  if (stream) stream.getTracks().forEach(t => t.stop());
+async function startAudio() {
+  if (audStream) audStream.getTracks().forEach(t => t.stop());
   const r = $('raw').checked;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: $('cam').value ? { deviceId: { ideal: $('cam').value } } : { facingMode: 'user' },
-      audio: { deviceId: $('mic').value ? { ideal: $('mic').value } : undefined, echoCancellation: !r, noiseSuppression: !r, autoGainControl: !r }
+    audStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: $('mic').value ? { ideal: $('mic').value } : undefined,
+        echoCancellation: !r,
+        noiseSuppression: !r,
+        autoGainControl: !r
+      }
     });
-    $('preview').srcObject = stream;
+    await loadMics();
     setupAudio();
-    ctx.createMediaStreamSource(stream).connect(bGain);
+    if (micSrcNode) micSrcNode.disconnect();
+    micSrcNode = ctx.createMediaStreamSource(audStream);
+    micSrcNode.connect(bGain);
+    say('Audio connected!', false);
   } catch (e) {
-    say('Stream error (' + e.name + '): ' + e.message, true);
+    say('Audio error (' + e.name + '): ' + e.message, true);
+  }
+}
+
+async function startVideo() {
+  if (vidStream) vidStream.getTracks().forEach(t => t.stop());
+  const mode = $('cam').value || 'user';
+  try {
+    vidStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: mode } }
+    });
+    $('preview').srcObject = vidStream;
+    say('Camera & Audio connected!', false);
+  } catch (e) {
+    say('Camera warning (' + e.name + '): Audio still works! Try switching Front/Rear camera.', true);
   }
 }
 
@@ -297,9 +312,11 @@ $('btnPause').onclick = () => {
 };
 
 $('btnStart').onclick = () => {
-  if (!stream || !mixDest) return;
+  if (!mixDest) return;
   chunks = [];
-  const comb = new MediaStream([...stream.getVideoTracks(), ...mixDest.stream.getAudioTracks()]);
+  const tracks = [...mixDest.stream.getAudioTracks()];
+  if (vidStream) tracks.push(...vidStream.getVideoTracks());
+  const comb = new MediaStream(tracks);
   const mime = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
   recObj = new MediaRecorder(comb, { mimeType: mime, audioBitsPerSecond: 256000 });
   recObj.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
@@ -332,9 +349,11 @@ $('btnStop').onclick = () => {
   $('rec').style.display = 'none';
 };
 
-$('cam').onchange = startStream; $('mic').onchange = startStream; $('raw').onchange = startStream;
+$('cam').onchange = startVideo;
+$('mic').onchange = startAudio;
+$('raw').onchange = startAudio;
 $('mon').onchange = () => { if (mGain) mGain.gain.value = $('mon').checked ? 1 : 0; };
-navigator.mediaDevices.ondevicechange = async () => { await loadDevs(); await startStream(); };
+navigator.mediaDevices.ondevicechange = async () => { await loadMics(); };
 </script>
 </body>
 </html>
